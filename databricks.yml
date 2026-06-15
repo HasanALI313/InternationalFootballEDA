@@ -1,0 +1,207 @@
+# Databricks Asset Bundle (DAB) Configuration
+# International Football EDA Project - CI/CD Pipeline
+
+bundle:
+  name: international_football_eda
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: Unity Catalog name
+    default: wc_2026_predions
+  
+  bronze_schema:
+    description: Bronze layer schema
+    default: bronze
+  
+  silver_schema:
+    description: Silver layer schema
+    default: silver
+  
+  gold_schema:
+    description: Gold layer schema
+    default: gold
+
+targets:
+  # Development environment
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: ${workspace.host}
+    variables:
+      catalog: wc_2026_predions_dev
+  
+  # Staging environment
+  staging:
+    mode: production
+    workspace:
+      host: ${workspace.host}
+    variables:
+      catalog: wc_2026_predions_staging
+    
+  # Production environment
+  prod:
+    mode: production
+    workspace:
+      host: ${workspace.host}
+      # root_path: /Workspace/prod/international_football_eda
+    variables:
+      catalog: wc_2026_predions
+
+resources:
+  jobs:
+    # Bronze Layer Job - Data Ingestion
+    bronze_layer_ingestion:
+      name: "[${bundle.target}] Football Data - Bronze Layer Ingestion"
+      
+      tasks:
+        - task_key: ingest_bronze_data
+          notebook_task:
+            notebook_path: ${workspace.file_path}/src/Bronze
+            source: WORKSPACE
+          new_cluster:
+            num_workers: 2
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "i3.xlarge"
+            spark_conf:
+              "spark.databricks.delta.preview.enabled": "true"
+      
+      schedule:
+        quartz_cron_expression: "0 0 2 * * ?"  # Daily at 2 AM
+        timezone_id: "UTC"
+        pause_status: "UNPAUSED"
+      
+      email_notifications:
+        on_failure:
+          - ${workspace.current_user.userName}
+      
+      max_concurrent_runs: 1
+    
+    # Silver Layer Job - Data Transformation
+    silver_layer_transformation:
+      name: "[${bundle.target}] Football Data - Silver Layer Transformation"
+      
+      tasks:
+        - task_key: transform_silver_data
+          notebook_task:
+            notebook_path: ${workspace.file_path}/src/Silver
+            source: WORKSPACE
+          depends_on:
+            - task_key: check_bronze_data
+          new_cluster:
+            num_workers: 2
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "i3.xlarge"
+        
+        - task_key: check_bronze_data
+          notebook_task:
+            notebook_path: ${workspace.file_path}/src/Bronze
+            source: WORKSPACE
+          new_cluster:
+            num_workers: 1
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "i3.xlarge"
+        
+        - task_key: process_dimension_data
+          notebook_task:
+            notebook_path: ${workspace.file_path}/src/Other_dim_data
+            source: WORKSPACE
+          depends_on:
+            - task_key: transform_silver_data
+          new_cluster:
+            num_workers: 2
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "i3.xlarge"
+      
+      schedule:
+        quartz_cron_expression: "0 30 2 * * ?"  # Daily at 2:30 AM
+        timezone_id: "UTC"
+        pause_status: "UNPAUSED"
+      
+      email_notifications:
+        on_failure:
+          - ${workspace.current_user.userName}
+      
+      max_concurrent_runs: 1
+    
+    # Gold Layer Job - Analytics & Aggregations
+    gold_layer_analytics:
+      name: "[${bundle.target}] Football Data - Gold Layer Analytics"
+      
+      tasks:
+        - task_key: create_gold_tables
+          notebook_task:
+            notebook_path: ${workspace.file_path}/src/Gold
+            source: WORKSPACE
+          new_cluster:
+            num_workers: 2
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "i3.xlarge"
+      
+      schedule:
+        quartz_cron_expression: "0 0 3 * * ?"  # Daily at 3 AM
+        timezone_id: "UTC"
+        pause_status: "UNPAUSED"
+      
+      email_notifications:
+        on_failure:
+          - ${workspace.current_user.userName}
+      
+      max_concurrent_runs: 1
+    
+    # ML Model Training Job
+    ml_model_training:
+      name: "[${bundle.target}] Football - Game Classification Model Training"
+      
+      tasks:
+        - task_key: train_classification_model
+          notebook_task:
+            notebook_path: ${workspace.file_path}/src/Game_Classification_Model
+            source: WORKSPACE
+          new_cluster:
+            num_workers: 4
+            spark_version: "15.4.x-cpu-ml-scala2.12"
+            node_type_id: "i3.xlarge"
+      
+      schedule:
+        quartz_cron_expression: "0 0 4 * * ?"  # Daily at 4 AM
+        timezone_id: "UTC"
+        pause_status: "PAUSED"  # Run manually or on-demand
+      
+      email_notifications:
+        on_success:
+          - ${workspace.current_user.userName}
+        on_failure:
+          - ${workspace.current_user.userName}
+      
+      max_concurrent_runs: 1
+    
+    # World Cup 2026 Simulation
+    world_cup_simulation:
+      name: "[${bundle.target}] Football - World Cup 2026 Simulation"
+      
+      tasks:
+        - task_key: run_simulation
+          notebook_task:
+            notebook_path: "${workspace.file_path}/src/World Cup 2026 Simulation"
+            source: WORKSPACE
+          new_cluster:
+            num_workers: 4
+            spark_version: "15.4.x-cpu-ml-scala2.12"
+            node_type_id: "i3.xlarge"
+      
+      schedule:
+        quartz_cron_expression: "0 0 5 * * SUN"  # Weekly on Sunday at 5 AM
+        timezone_id: "UTC"
+        pause_status: "PAUSED"
+      
+      email_notifications:
+        on_success:
+          - ${workspace.current_user.userName}
+        on_failure:
+          - ${workspace.current_user.userName}
+      
+      max_concurrent_runs: 1
