@@ -1,0 +1,88 @@
+name: PR Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'src/**'
+      - 'databricks.yml'
+      - 'resources/**'
+      - '.github/workflows/**'
+
+jobs:
+  validate-bundle:
+    name: Validate Databricks Bundle
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      
+      - name: Install Databricks CLI
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
+          databricks --version
+      
+      - name: Validate Bundle Configuration
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: |
+          echo "Validating bundle configuration..."
+          databricks bundle validate --target dev
+      
+      - name: Generate Bundle Summary
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: |
+          echo "Generating bundle summary..."
+          databricks bundle summary --target dev > bundle_summary.txt
+          cat bundle_summary.txt
+      
+      - name: Comment PR with Summary
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('bundle_summary.txt', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## Bundle Validation Results ✅\n\n<details>\n<summary>Bundle Summary</summary>\n\n\`\`\`\n${summary}\n\`\`\`\n\n</details>`
+            });
+
+  lint-notebooks:
+    name: Lint Notebooks
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: |
+          pip install nbqa black flake8 isort
+      
+      - name: Check notebook formatting
+        run: |
+          nbqa black src/ --check || echo "Notebooks need formatting"
+      
+      - name: Lint notebooks
+        run: |
+          nbqa flake8 src/ --ignore=E501,W503 || echo "Linting warnings found"
