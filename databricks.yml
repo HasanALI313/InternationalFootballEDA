@@ -4,9 +4,6 @@
 bundle:
   name: international_football_eda
 
-include:
-  - resources/*.yml
-
 variables:
   catalog:
     description: Unity Catalog name
@@ -29,25 +26,18 @@ targets:
   dev:
     mode: development
     default: true
-    workspace:
-      host: ${workspace.host}
     variables:
       catalog: wc_2026_predions_dev
   
   # Staging environment
   staging:
     mode: production
-    workspace:
-      host: ${workspace.host}
     variables:
       catalog: wc_2026_predions_staging
     
   # Production environment
   prod:
     mode: production
-    workspace:
-      host: ${workspace.host}
-      # root_path: /Workspace/prod/international_football_eda
     variables:
       catalog: wc_2026_predions
 
